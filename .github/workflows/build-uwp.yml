@@ -38,6 +38,14 @@ jobs:
           /usr/local/bin/llvm-ar --version
           llvm-objdump --version | head -n 2
 
+      - name: Point developer folder at this project
+        run: |
+          # some toolchain files point at the original developer's own folder
+          sudo mkdir -p /home/claude/RPCS3
+          sudo ln -sfn "$PWD" /home/claude/RPCS3/rpcs3
+          chmod +x uwp/toolchain/zig-* || true
+          ls -l /home/claude/RPCS3/rpcs3/uwp/toolchain
+
       - name: Build makemsix
         run: |
           git clone --depth 1 https://github.com/microsoft/msix-packaging.git
