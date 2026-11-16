@@ -100,6 +100,21 @@ jobs:
 
       - name: Build Mesa Dozen
         run: |
+          # d3d12 and dxcore import libraries (zig doesn't include them)
+          sudo apt-get install -y mingw-w64-x86-64-dev
+          mkdir -p uwp-libs
+          for l in d3d12 dxcore; do
+            cp /usr/x86_64-w64-mingw32/lib/lib$l.a uwp-libs/ 2>/dev/null || echo "lib$l.a not found"
+          done
+          ls -l uwp-libs
+          # add that folder when linking only
+          for t in zig-cc zig-c++; do
+            f=$PWD/uwp/toolchain/$t
+            echo "--- $t:"; cat "$f"
+            mv "$f" "$f.real"
+            printf '#!/bin/sh\nfor a in "$@"; do case "$a" in -c|-E|-S|-M|-MM) exec "%s.real" "$@";; esac; done\nexec "%s.real" "$@" -L%s/uwp-libs\n' "$f" "$f" "$PWD" > "$f"
+            chmod +x "$f"
+          done
           curl -L -o mesa.tar.xz https://archive.mesa3d.org/mesa-26.2.5.tar.xz
           tar xf mesa.tar.xz
           uwp/toolchain/build-mesa-dzn.sh mesa-26.2.5 build-dzn
