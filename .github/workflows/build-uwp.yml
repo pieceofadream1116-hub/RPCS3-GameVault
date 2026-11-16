@@ -27,8 +27,11 @@ jobs:
           sudo ln -sf /usr/bin/llvm-windres-18 /usr/local/bin/llvm-windres
           sudo ln -sf /usr/bin/llvm-dlltool-18 /usr/local/bin/llvm-dlltool
           sudo ln -sf /usr/bin/llvm-nm-18 /usr/local/bin/llvm-nm
-          sudo ln -sf /usr/bin/llvm-ar-18 /usr/local/bin/llvm-ar
-          sudo ln -sf /usr/bin/llvm-ranlib-18 /usr/local/bin/llvm-ranlib
+          # ar and ranlib must match the compiler (zig's LLVM), not LLVM 18
+          printf '#!/bin/sh\nexec python3 -m ziglang ar "$@"\n' | sudo tee /usr/local/bin/llvm-ar > /dev/null
+          printf '#!/bin/sh\nexec python3 -m ziglang ranlib "$@"\n' | sudo tee /usr/local/bin/llvm-ranlib > /dev/null
+          sudo chmod +x /usr/local/bin/llvm-ar /usr/local/bin/llvm-ranlib
+          /usr/local/bin/llvm-ar --version
 
       - name: Build makemsix
         run: |
