@@ -27,6 +27,8 @@ jobs:
           sudo ln -sf /usr/bin/llvm-windres-18 /usr/local/bin/llvm-windres
           sudo ln -sf /usr/bin/llvm-dlltool-18 /usr/local/bin/llvm-dlltool
           sudo ln -sf /usr/bin/llvm-nm-18 /usr/local/bin/llvm-nm
+          sudo ln -sf /usr/bin/llvm-ar-18 /usr/local/bin/llvm-ar
+          sudo ln -sf /usr/bin/llvm-ranlib-18 /usr/local/bin/llvm-ranlib
 
       - name: Build makemsix
         run: |
@@ -58,8 +60,13 @@ jobs:
 
       - name: Build RPCS3
         run: |
+          AR=/usr/local/bin/llvm-ar
+          RANLIB=/usr/local/bin/llvm-ranlib
           cmake -S . -B build-uwp -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE=uwp/toolchain/toolchain-uwp.cmake -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_AR=$AR -DCMAKE_RANLIB=$RANLIB \
+            -DCMAKE_C_COMPILER_AR=$AR -DCMAKE_CXX_COMPILER_AR=$AR \
+            -DCMAKE_C_COMPILER_RANLIB=$RANLIB -DCMAKE_CXX_COMPILER_RANLIB=$RANLIB \
             -DRPCS3_UWP=ON -DRPCS3_UWP_FFMPEG_LIB_DIR=$PWD/ffmpeg-install/lib \
             -DUSE_VULKAN=ON -DRPCS3_UWP_VULKAN_INCLUDE_DIR=$PWD/Vulkan-Headers/include \
             -DWITH_LLVM=ON -DBUILD_LLVM=OFF -DSTATIC_LINK_LLVM=ON -DLLVM_DIR=$PWD/llvm-install/lib/cmake/llvm \
