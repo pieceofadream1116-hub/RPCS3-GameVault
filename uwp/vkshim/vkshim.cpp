@@ -28,7 +28,7 @@ namespace
 
 	// ---- VRAM clamp ----
 	// Change this number to try other limits (in gigabytes).
-	constexpr VkDeviceSize VRAM_LIMIT_GB = 4;
+	constexpr VkDeviceSize VRAM_LIMIT_GB = 2;
 	constexpr VkDeviceSize VRAM_LIMIT = VRAM_LIMIT_GB * 1024ull * 1024ull * 1024ull;
 
 	PFN_vkGetPhysicalDeviceMemoryProperties g_real_mem = nullptr;
