@@ -2,6 +2,9 @@
 // driver from the package and forwards every vk* call to it. There is a single driver,
 // so no layers or ICD discovery; instance and device functions are resolved through
 // vkGetInstanceProcAddr once the instance exists (Mesa returns dispatching trampolines).
+//
+// VRAM clamp: the reported size of the GPU-local memory heaps is capped so RPCS3
+// budgets its video memory more conservatively (attempt to avoid "out of video memory").
 
 #include <windows.h>
 #include <vulkan/vulkan.h>
@@ -23,6 +26,68 @@ namespace
 {
 	PFN_vkGetInstanceProcAddr g_gipa = nullptr;
 
+	// ---- VRAM clamp ----
+	// Change this number to try other limits (in gigabytes).
+	constexpr VkDeviceSize VRAM_LIMIT_GB = 4;
+	constexpr VkDeviceSize VRAM_LIMIT = VRAM_LIMIT_GB * 1024ull * 1024ull * 1024ull;
+
+	PFN_vkGetPhysicalDeviceMemoryProperties g_real_mem = nullptr;
+	PFN_vkGetPhysicalDeviceMemoryProperties2 g_real_mem2 = nullptr;
+	PFN_vkGetPhysicalDeviceMemoryProperties2 g_real_mem2_khr = nullptr;
+
+	void clamp_heaps(VkPhysicalDeviceMemoryProperties& props)
+	{
+		for (uint32_t i = 0; i < props.memoryHeapCount; i++)
+		{
+			VkMemoryHeap& heap = props.memoryHeaps[i];
+			if ((heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) && heap.size > VRAM_LIMIT)
+				heap.size = VRAM_LIMIT;
+		}
+	}
+
+	VKAPI_ATTR void VKAPI_CALL clamped_mem(VkPhysicalDevice dev, VkPhysicalDeviceMemoryProperties* props)
+	{
+		g_real_mem(dev, props);
+		clamp_heaps(*props);
+	}
+
+	VKAPI_ATTR void VKAPI_CALL clamped_mem2(VkPhysicalDevice dev, VkPhysicalDeviceMemoryProperties2* props)
+	{
+		g_real_mem2(dev, props);
+		clamp_heaps(props->memoryProperties);
+	}
+
+	VKAPI_ATTR void VKAPI_CALL clamped_mem2_khr(VkPhysicalDevice dev, VkPhysicalDeviceMemoryProperties2* props)
+	{
+		g_real_mem2_khr(dev, props);
+		clamp_heaps(props->memoryProperties);
+	}
+
+	// Returns our wrapper for the memory query functions, or the driver's own function otherwise.
+	PFN_vkVoidFunction wrap(const char* name, PFN_vkVoidFunction fn)
+	{
+		if (!fn || !name)
+			return fn;
+
+		if (std::strcmp(name, "vkGetPhysicalDeviceMemoryProperties") == 0)
+		{
+			g_real_mem = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(fn);
+			return reinterpret_cast<PFN_vkVoidFunction>(&clamped_mem);
+		}
+		if (std::strcmp(name, "vkGetPhysicalDeviceMemoryProperties2") == 0)
+		{
+			g_real_mem2 = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties2>(fn);
+			return reinterpret_cast<PFN_vkVoidFunction>(&clamped_mem2);
+		}
+		if (std::strcmp(name, "vkGetPhysicalDeviceMemoryProperties2KHR") == 0)
+		{
+			g_real_mem2_khr = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties2>(fn);
+			return reinterpret_cast<PFN_vkVoidFunction>(&clamped_mem2_khr);
+		}
+		return fn;
+	}
+	// ---- end VRAM clamp ----
+
 	bool load_driver()
 	{
 		if (g_gipa)
@@ -41,7 +106,7 @@ namespace
 		for (size_t i = 0; i < uwp_vk_count; i++)
 		{
 			if (auto fn = g_gipa(instance, uwp_vk_names[i]))
-				uwp_vk_ptrs[i] = reinterpret_cast<void*>(fn);
+				uwp_vk_ptrs[i] = reinterpret_cast<void*>(wrap(uwp_vk_names[i], fn));
 		}
 	}
 
@@ -56,7 +121,7 @@ extern "C"
 {
 	VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char* name)
 	{
-		return load_driver() ? g_gipa(instance, name) : nullptr;
+		return load_driver() ? wrap(name, g_gipa(instance, name)) : nullptr;
 	}
 
 	VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char* layer, uint32_t* count, VkExtensionProperties* props)
