@@ -27,11 +27,16 @@ jobs:
           sudo ln -sf /usr/bin/llvm-windres-18 /usr/local/bin/llvm-windres
           sudo ln -sf /usr/bin/llvm-dlltool-18 /usr/local/bin/llvm-dlltool
           sudo ln -sf /usr/bin/llvm-nm-18 /usr/local/bin/llvm-nm
+          sudo ln -sf /usr/bin/llvm-objdump-18 /usr/local/bin/llvm-objdump
+          sudo ln -sf /usr/bin/llvm-readobj-18 /usr/local/bin/llvm-readobj
+          sudo ln -sf /usr/bin/llvm-strip-18 /usr/local/bin/llvm-strip
+          sudo ln -sf /usr/bin/llvm-objcopy-18 /usr/local/bin/llvm-objcopy
           # ar and ranlib must match the compiler (zig's LLVM), not LLVM 18
           printf '#!/bin/sh\nexec python3 -m ziglang ar "$@"\n' | sudo tee /usr/local/bin/llvm-ar > /dev/null
           printf '#!/bin/sh\nexec python3 -m ziglang ranlib "$@"\n' | sudo tee /usr/local/bin/llvm-ranlib > /dev/null
           sudo chmod +x /usr/local/bin/llvm-ar /usr/local/bin/llvm-ranlib
           /usr/local/bin/llvm-ar --version
+          llvm-objdump --version | head -n 2
 
       - name: Build makemsix
         run: |
@@ -43,9 +48,9 @@ jobs:
       - name: Vulkan headers
         run: git clone --depth 1 https://github.com/KhronosGroup/Vulkan-Headers.git
 
-      - name: Cache LLVM
+      - name: Restore LLVM cache
         id: llvm-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: llvm-install
           key: llvm-uwp-${{ hashFiles('uwp/toolchain/build-llvm.sh') }}
@@ -55,11 +60,18 @@ jobs:
           git clone --depth 1 --branch n8.1 https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
           uwp/toolchain/build-ffmpeg.sh ffmpeg-src ffmpeg-build ffmpeg-install
 
-      - name: Build LLVM (about 2 hours)
+      - name: Build LLVM (about 1 hour)
         if: steps.llvm-cache.outputs.cache-hit != 'true'
         run: |
           uwp/toolchain/build-llvm.sh llvm-build llvm-install
           rm -rf llvm-build
+
+      - name: Save LLVM cache
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: llvm-install
+          key: llvm-uwp-${{ hashFiles('uwp/toolchain/build-llvm.sh') }}
 
       - name: Build RPCS3
         run: |
