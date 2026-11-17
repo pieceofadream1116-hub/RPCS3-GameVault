@@ -100,24 +100,33 @@ jobs:
 
       - name: Build Mesa Dozen
         run: |
-          # d3d12 and dxcore import libraries (zig doesn't include them)
-          sudo apt-get install -y mingw-w64-x86-64-dev
+          # make d3d12 and dxcore import libraries with zig's own tool
           mkdir -p uwp-libs
+          printf 'LIBRARY d3d12.dll\nEXPORTS\nD3D12CreateDevice\nD3D12CreateRootSignatureDeserializer\nD3D12CreateVersionedRootSignatureDeserializer\nD3D12EnableExperimentalFeatures\nD3D12GetDebugInterface\nD3D12GetInterface\nD3D12SerializeRootSignature\nD3D12SerializeVersionedRootSignature\n' > uwp-libs/d3d12.def
+          printf 'LIBRARY dxcore.dll\nEXPORTS\nDXCoreCreateAdapterFactory\n' > uwp-libs/dxcore.def
           for l in d3d12 dxcore; do
-            cp /usr/x86_64-w64-mingw32/lib/lib$l.a uwp-libs/ 2>/dev/null || echo "lib$l.a not found"
+            python3 -m ziglang dlltool -m i386:x86-64 -d uwp-libs/$l.def -l uwp-libs/lib$l.a \
+              || llvm-dlltool -m i386:x86-64 -d uwp-libs/$l.def -l uwp-libs/lib$l.a
           done
           ls -l uwp-libs
           # add that folder when linking only
           for t in zig-cc zig-c++; do
             f=$PWD/uwp/toolchain/$t
-            echo "--- $t:"; cat "$f"
             mv "$f" "$f.real"
             printf '#!/bin/sh\nfor a in "$@"; do case "$a" in -c|-E|-S|-M|-MM) exec "%s.real" "$@";; esac; done\nexec "%s.real" "$@" -L%s/uwp-libs\n' "$f" "$f" "$PWD" > "$f"
             chmod +x "$f"
           done
+          # quick test: can we link against d3d12?
+          printf 'int main(void){return 0;}\n' > t.c
+          uwp/toolchain/zig-cc t.c -o t.exe -ld3d12 -ldxcore
+          echo "d3d12 link test OK"
           curl -L -o mesa.tar.xz https://archive.mesa3d.org/mesa-26.2.5.tar.xz
           tar xf mesa.tar.xz
-          uwp/toolchain/build-mesa-dzn.sh mesa-26.2.5 build-dzn
+          uwp/toolchain/build-mesa-dzn.sh mesa-26.2.5 build-dzn || {
+            echo "===== meson log (d3d12 part) ====="
+            grep -n -A25 "d3d12" build-dzn/meson-logs/meson-log.txt | tail -n 120
+            exit 1
+          }
 
       - name: Get DXC (dxil.dll, dxcompiler.dll)
         run: |
