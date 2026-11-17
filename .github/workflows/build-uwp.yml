@@ -38,13 +38,13 @@ jobs:
           /usr/local/bin/llvm-ar --version
           llvm-objdump --version | head -n 2
 
-      - name: Point developer folder at this project
+      - name: Point developer folders at this project
         run: |
-          # some toolchain files point at the original developer's own folder
-          sudo mkdir -p /home/claude/RPCS3
+          # the toolchain files point at the original developer's own folders
+          sudo mkdir -p /home/claude/RPCS3 /home/claude/uwp-port
           sudo ln -sfn "$PWD" /home/claude/RPCS3/rpcs3
+          sudo ln -sfn "$PWD/build-uwp" /home/claude/uwp-port/build
           chmod +x uwp/toolchain/zig-* || true
-          ls -l /home/claude/RPCS3/rpcs3/uwp/toolchain
 
       - name: Build makemsix
         run: |
@@ -100,15 +100,42 @@ jobs:
 
       - name: Build Mesa Dozen
         run: |
-          # Mesa's setup expects the original developer's import-library folder
-          IMPLIBS=/home/claude/uwp-port/build/uwp-implibs
-          sudo mkdir -p $IMPLIBS
-          sudo chown -R "$(id -u):$(id -g)" /home/claude/uwp-port
-          echo "===== where the project mentions these files ====="
-          grep -rn "uwp-implibs\|sysstubs" uwp | head -n 40 || true
-          find . -iname "*sysstubs*" -not -path "./mesa-*" || true
-          # d3d12 and dxcore import libraries
-          printf 'LIBRARY d3d12.dll\nEXPORTS\nD3D12CreateDevice\nD3D12CreateRootSignatureDeserializer\nD3D12CreateVersionedRootSignatureDeserializer\nD3D12EnableExperimentalFeatures\nD3D12GetDebugInterface\nD3D12GetInterface\nD3D12SerializeRootSignature\nD3D12SerializeVersionedRootSignature\n' > $IMPLIBS/d3d12.def
-          printf 'LIBRARY dxcore.dll\nEXPORTS\nDXCoreCreateAdapterFactory\n' > $IMPLIBS/dxcore.def
-          for l in d3d12 dxcore; do
-            python3 -m ziglang dlltool -m i386:x86-64
+          # RPCS3's build already made uwp-implibs; Mesa now finds it
+          ls -l /home/claude/uwp-port/build/uwp-implibs
+          curl -L -o mesa.tar.xz https://archive.mesa3d.org/mesa-26.2.5.tar.xz
+          tar xf mesa.tar.xz
+          uwp/toolchain/build-mesa-dzn.sh mesa-26.2.5 build-dzn
+
+      - name: Get DXC (dxil.dll, dxcompiler.dll)
+        run: |
+          curl -L -o dxc.zip https://www.nuget.org/api/v2/package/Microsoft.Direct3D.DXC
+          mkdir dxc && cd dxc && 7z x ../dxc.zip > /dev/null
+          echo "DXIL=$(find $PWD -path '*x64*' -name dxil.dll | head -n 1)" >> $GITHUB_ENV
+          echo "DXCOMP=$(find $PWD -path '*x64*' -name dxcompiler.dll | head -n 1)" >> $GITHUB_ENV
+          echo "DXLIC=$(find $PWD -iname '*LICENSE*' | head -n 1)" >> $GITHUB_ENV
+
+      - name: Set version and make signing certificate
+        run: |
+          MANIFEST=uwp/package/AppxManifest.xml
+          sed -i -E "0,/Version=\"[0-9.]+\"/s//Version=\"0.1.35.$((5000 + GITHUB_RUN_NUMBER))\"/" $MANIFEST
+          PUBLISHER=$(grep -oP 'Publisher="\K[^"]+' $MANIFEST | head -n 1)
+          echo "Publisher: $PUBLISHER"
+          SUBJ="/$(echo "$PUBLISHER" | sed 's/, */\//g')"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout key.pem -out cert.pem -subj "$SUBJ" \
+            -addext "extendedKeyUsage=codeSigning" -addext "basicConstraints=CA:FALSE"
+          openssl pkcs12 -export -out cert.pfx -inkey key.pem -in cert.pem -passout pass:build123
+          openssl x509 -in cert.pem -outform DER -out RPCS3Xbox.cer
+
+      - name: Package
+        run: |
+          cp "$DXLIC" DXIL-LICENSE.txt
+          export UWP_EXTRA_FILES=build-dzn/src/microsoft/vulkan/vulkan_dzn.dll:$DXIL:$DXCOMP:$PWD/DXIL-LICENSE.txt
+          uwp/package/package.sh build-uwp RPCS3Xbox.appx cert.pfx build123
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: RPCS3Xbox-appx
+          path: |
+            RPCS3Xbox.appx
+            RPCS3Xbox.cer
