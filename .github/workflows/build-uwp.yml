@@ -129,7 +129,7 @@ jobs:
       - name: Package
         run: |
           cp "$DXLIC" DXIL-LICENSE.txt
-          export UWP_EXTRA_FILES=build-dzn/src/microsoft/vulkan/vulkan_dzn.dll:$DXIL:$DXCOMP:$PWD/DXIL-LICENSE.txt
+          export UWP_EXTRA_FILES=uwp/vulkan_dzn.dll:$DXIL:$DXCOMP:$PWD/DXIL-LICENSE.txt
           uwp/package/package.sh build-uwp RPCS3Xbox.appx cert.pfx build123
 
       - name: Upload app
