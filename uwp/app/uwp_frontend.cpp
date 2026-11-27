@@ -10,6 +10,7 @@
 
 #include "stdafx.h"
 #include "uwp_frontend.h"
+#include "uwp_input.h"
 #include "uwp_firmware.h"
 #include "uwp_update.h"
 #include "uwp_patches.h"
@@ -523,6 +524,10 @@ namespace uwp_frontend
 			// In a game: saved to config.yml but not applied until the game boots again (the live switch breaks Dozen).
 			bool on_restart = false;
 			std::string pending; // the saved value the running game doesn't use yet
+			// Shown on the Settings tab and in the pause menu (under `section`).
+			bool both = false;
+			// Called before the list is shown: fills `values` and `shown` (lists found on the drives).
+			std::function<void(setting_item&)> refresh;
 		};
 
 		struct modal
@@ -686,6 +691,116 @@ namespace uwp_frontend
 		// RPCN server call in progress (worker thread); the menu waits for it.
 		atomic_t<bool> g_rpcn_busy{false};
 		std::string g_rpcn_busy_text; // set on the UI thread before the job starts
+
+		// ---- Frank's Xbox extras: turbo buttons and the background picture (LocalState/xbox_extras.yml) ----
+		struct xbox_extras_cfg : cfg::node
+		{
+			cfg::_bool turbo_cross{this, "Turbo Cross", false};
+			cfg::_bool turbo_circle{this, "Turbo Circle", false};
+			cfg::_bool turbo_square{this, "Turbo Square", false};
+			cfg::_bool turbo_triangle{this, "Turbo Triangle", false};
+			cfg::_bool turbo_l1{this, "Turbo L1", false};
+			cfg::_bool turbo_r1{this, "Turbo R1", false};
+			cfg::_bool turbo_l2{this, "Turbo L2", false};
+			cfg::_bool turbo_r2{this, "Turbo R2", false};
+			cfg::string background{this, "Background picture", ""};
+		};
+
+		xbox_extras_cfg g_extras;
+		atomic_t<u64> g_background_serial = 1;
+		std::vector<std::string> g_pictures; // pictures found on the drives (g_data_mutex)
+		atomic_t<u64> g_pictures_serial = 0;
+
+		std::string extras_file()
+		{
+			return g_host.local_dir + "xbox_extras.yml";
+		}
+
+		void apply_turbo()
+		{
+			u32 mask = 0;
+			if (g_extras.turbo_cross) mask |= uwp_turbo_cross;
+			if (g_extras.turbo_circle) mask |= uwp_turbo_circle;
+			if (g_extras.turbo_square) mask |= uwp_turbo_square;
+			if (g_extras.turbo_triangle) mask |= uwp_turbo_triangle;
+			if (g_extras.turbo_l1) mask |= uwp_turbo_l1;
+			if (g_extras.turbo_r1) mask |= uwp_turbo_r1;
+			if (g_extras.turbo_l2) mask |= uwp_turbo_l2;
+			if (g_extras.turbo_r2) mask |= uwp_turbo_r2;
+			uwp_input_set_turbo(mask);
+		}
+
+		void load_extras()
+		{
+			if (fs::file f{extras_file()})
+				g_extras.from_string(f.to_string());
+			apply_turbo();
+		}
+
+		void save_extras()
+		{
+			fs::write_file(extras_file(), fs::rewrite, g_extras.to_string());
+		}
+
+		bool is_picture_file(const std::string& name)
+		{
+			const usz dot = name.rfind('.');
+			std::string ext = dot == umax ? std::string() : name.substr(dot);
+			std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+			return ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".bmp";
+		}
+
+		void add_extras_settings(std::vector<setting_item>& out)
+		{
+			const std::vector<std::string> on_off = {"false", "true"};
+			const auto turbo = [&](std::string label, cfg::_bool* node)
+			{
+				setting_item item{"Turbo " + label, node, on_off, "Hold the button to rapid-fire it (2 frames on, 2 frames off)."};
+				item.both = true;
+				item.section = "Turbo";
+				item.on_change = []()
+				{
+					apply_turbo();
+					save_extras();
+				};
+				out.push_back(std::move(item));
+			};
+			turbo("Cross (A)", &g_extras.turbo_cross);
+			turbo("Circle (B)", &g_extras.turbo_circle);
+			turbo("Square (X)", &g_extras.turbo_square);
+			turbo("Triangle (Y)", &g_extras.turbo_triangle);
+			turbo("L1 (LB)", &g_extras.turbo_l1);
+			turbo("R1 (RB)", &g_extras.turbo_r1);
+			turbo("L2 (LT)", &g_extras.turbo_l2);
+			turbo("R2 (RT)", &g_extras.turbo_r2);
+
+			setting_item bg{"Background picture", &g_extras.background, {""},
+				"Your own picture behind the game list. Put .jpg or .png pictures on your drive's top level or in a Backgrounds or Pictures folder."};
+			bg.refresh = [](setting_item& item)
+			{
+				std::vector<std::string> pics;
+				{
+					std::lock_guard lock(g_data_mutex);
+					pics = g_pictures;
+				}
+				const std::string cur = g_extras.background.to_string();
+				if (!cur.empty() && std::find(pics.begin(), pics.end(), cur) == pics.end())
+					pics.insert(pics.begin(), cur); // the chosen one, even when its drive isn't read yet
+				item.values = {""};
+				item.shown = {"Moving blue (no picture)"};
+				for (const std::string& path : pics)
+				{
+					item.values.push_back(path);
+					item.shown.push_back(path);
+				}
+			};
+			bg.on_change = []()
+			{
+				save_extras();
+				g_background_serial++;
+			};
+			out.push_back(std::move(bg));
+		}
 
 		// ---- Scanning ----
 		bool is_program_file(const std::string& name)
@@ -874,11 +989,7 @@ namespace uwp_frontend
 				if (!e.is_directory && is_program_file(e.name))
 					programs.push_back({e.name, "program  ·  boot folder", boot_dir + e.name, nullptr, {}, {}, "Program", "boot folder"});
 			}
-			for (const auto& e : fs::dir(g_host.package_dir + "test/"))
-			{
-				if (!e.is_directory && is_program_file(e.name))
-					programs.push_back({e.name, "bundled test program", g_host.package_dir + "test/" + e.name, nullptr, {}, {}, "Test program", "bundled with the app"});
-			}
+			// The app's bundled test programs are not listed: they only cluttered the game list.
 
 			for (const std::string& dir : {g_host.local_dir, fw_dir, pkg_dir})
 				scan_install_dir(installs, dir);
@@ -889,6 +1000,7 @@ namespace uwp_frontend
 			// Pass 2, USB drives (slow: brokered *FromApp file APIs, see Utilities/File.cpp):
 			// game folders and ISOs in GAMES/ and PS3ISO/ (the multiMAN/webMAN layout) or the root,
 			// firmware, packages and licenses in the root, PS3/UPDATE/, PKG/, packages/ and exdata/.
+			std::vector<std::string> pictures;
 			for (char d = 'D'; d <= 'Z'; d++)
 			{
 				const std::string root = fmt::format("%c:/", d);
@@ -897,7 +1009,19 @@ namespace uwp_frontend
 				ui_log.notice("UI: drive %s is accessible", root);
 				const std::string drive = fmt::format("USB %c:", d);
 
-				for (const std::string& dir : {root + "GAMES/", root + "PS3ISO/", root})
+				// Pictures for the background (Settings > Background picture).
+				for (const std::string& dir : {root, root + "Backgrounds/", root + "Pictures/", root + "Wallpapers/"})
+				{
+					for (const auto& e : fs::dir(dir))
+					{
+						if (!e.is_directory && is_picture_file(e.name))
+							pictures.push_back(dir + e.name);
+					}
+				}
+
+				// ES-DE's folders (ROMs/ps3), as on the other Xbox apps, then the multiMAN/webMAN layout.
+				for (const std::string& dir : {root + "ES-DE/ROMs/ps3/", root + "ES-DE/roms/ps3/", root + "ROMs/ps3/", root + "roms/ps3/",
+					root + "GAMES/", root + "PS3ISO/", root})
 				{
 					for (const auto& e : fs::dir(dir))
 					{
@@ -913,6 +1037,14 @@ namespace uwp_frontend
 					scan_install_dir(installs, dir);
 			}
 
+			{
+				std::lock_guard lock(g_data_mutex);
+				if (pictures != g_pictures)
+				{
+					g_pictures = std::move(pictures);
+					g_pictures_serial++;
+				}
+			}
 			publish_scan(std::move(games), programs, std::move(installs), true);
 		}
 
@@ -1847,6 +1979,7 @@ namespace uwp_frontend
 			g_ui->dirty = true;
 		}
 
+
 		// ---- Settings ----
 		std::vector<setting_item> make_settings()
 		{
@@ -2745,6 +2878,7 @@ namespace uwp_frontend
 		g_host = host;
 		g_ui = new ui_state();
 		g_ui->settings = make_settings();
+		load_extras();
 		refresh_rpcn_account();
 		{
 			std::lock_guard lock(g_data_mutex);
@@ -3103,6 +3237,7 @@ namespace uwp_frontend
 			static std::vector<setting_item> items = []()
 			{
 				std::vector<setting_item> all = make_settings();
+				add_extras_settings(all);
 				for (setting_item& item : make_pause_settings())
 					all.push_back(std::move(item));
 				return all;
@@ -3122,6 +3257,62 @@ namespace uwp_frontend
 	bool model_ready()
 	{
 		return g_ready;
+	}
+
+	std::string background_picture()
+	{
+		return g_extras.background.to_string();
+	}
+
+	u64 background_serial()
+	{
+		return g_background_serial;
+	}
+
+	u64 pictures_serial()
+	{
+		return g_pictures_serial;
+	}
+
+	std::shared_ptr<const icon_data> load_picture(const std::string& path, u32 max_w, u32 max_h)
+	{
+		fs::file f(path);
+		if (!f)
+		{
+			ui_log.error("UI: can't open the background picture %s", path);
+			return nullptr;
+		}
+		const std::vector<u8> bytes = f.to_vector<u8>();
+		int w = 0, h = 0, comp = 0;
+		stbi_uc* rgba = bytes.empty() ? nullptr : stbi_load_from_memory(bytes.data(), ::narrow<int>(bytes.size()), &w, &h, &comp, 4);
+		if (!rgba || w <= 0 || h <= 0)
+		{
+			if (rgba)
+				stbi_image_free(rgba);
+			ui_log.error("UI: can't read the background picture %s", path);
+			return nullptr;
+		}
+		// Made smaller to fit max_w x max_h (cover: the shorter side fits), by sampling.
+		const double scale = std::min(1.0, std::max(static_cast<double>(max_w) / w, static_cast<double>(max_h) / h));
+		const u32 ow = std::max<u32>(1, static_cast<u32>(w * scale));
+		const u32 oh = std::max<u32>(1, static_cast<u32>(h * scale));
+		auto img = std::make_shared<icon_data>();
+		img->w = ow;
+		img->h = oh;
+		img->px.resize(usz{ow} * oh);
+		for (u32 y = 0; y < oh; y++)
+		{
+			const u32 sy = std::min<u32>(h - 1, static_cast<u32>(y / scale));
+			for (u32 x = 0; x < ow; x++)
+			{
+				const u32 sx = std::min<u32>(w - 1, static_cast<u32>(x / scale));
+				const stbi_uc* p = rgba + (usz{sy} * w + sx) * 4;
+				img->px[usz{y} * ow + x] = (u32{0xff} << 24) | (u32{p[0]} << 16) | (u32{p[1]} << 8) | p[2];
+			}
+		}
+		stbi_image_free(rgba);
+		ui_log.notice("UI: background picture %s (%dx%d, shown %ux%u)", path, w, h, ow, oh);
+		return img;
 	}
 
 	u64 model_serial()
@@ -3271,8 +3462,8 @@ namespace uwp_frontend
 			}
 			v.current = it == v.values.end() ? 0 : static_cast<int>(it - v.values.begin());
 			// The pause menu: what RPCS3's home menu changes while a game runs. The Settings tab shows the rest.
-			v.in_game = item.pause;
-			v.pause_only = item.pause;
+			v.in_game = item.pause || item.both;
+			v.pause_only = item.pause && !item.both;
 			v.section = item.section;
 			return v;
 		}
@@ -3516,7 +3707,11 @@ namespace uwp_frontend
 	{
 		std::vector<setting_view> out;
 		for (setting_item& item : xaml_settings())
+		{
+			if (item.refresh)
+				item.refresh(item);
 			out.push_back(to_setting_view(item));
+		}
 		return out;
 	}
 

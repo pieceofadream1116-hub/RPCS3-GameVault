@@ -470,6 +470,10 @@ namespace uwp_xaml
 			com<ITextBlock> t_firmware, t_version, t_update, t_telemetry, t_status, t_games_empty, t_install_empty;
 			com<ITextBlock> t_detail_title, t_detail_id, t_detail_kind, t_detail_version, t_detail_source, t_detail_placeholder;
 			com<IImage> detail_icon;
+			// The player's own background picture over the moving blue one, with a dark veil for the text.
+			com<IImage> bg_picture;
+			com<IUIElement> bg_picture_el, bg_dim_el;
+			u64 bg_seen = 0, pictures_seen = 0;
 			com<ITextBlock> t_loading_title, t_loading_detail, t_job_title, t_job_detail, t_dialog_title, t_dialog_text, t_error;
 			com<IRangeBase> loading_bar_range, job_bar_range;
 			com<IProgressBar> loading_bar, job_bar;
@@ -574,6 +578,9 @@ namespace uwp_xaml
 				t_detail_source = find_el<ITextBlock>(root, L"DetailSource");
 				t_detail_placeholder = find_el<ITextBlock>(root, L"DetailPlaceholder");
 				detail_icon = find_el<IImage>(root, L"DetailIcon");
+				bg_picture = find_el<IImage>(root, L"BgPicture");
+				bg_picture_el = find_el<IUIElement>(root, L"BgPicture");
+				bg_dim_el = find_el<IUIElement>(root, L"BgDim");
 
 				t_loading_title = find_el<ITextBlock>(root, L"LoadingTitle");
 				t_loading_detail = find_el<ITextBlock>(root, L"LoadingDetail");
@@ -1737,6 +1744,40 @@ namespace uwp_xaml
 				xaml_log.notice("Game panel %.0fx%.0f DIPs, swap chain %ux%u: scale %.3f x %.3f (0x%08x)", w, h, desc.Width, desc.Height, m._11, m._22, static_cast<u32>(hr));
 			}
 
+			// ---- Background picture ----
+			void sync_background()
+			{
+				if (const u64 bs = uwp_frontend::background_serial(); bs != bg_seen)
+				{
+					bg_seen = bs;
+					const std::string path = uwp_frontend::background_picture();
+					com<IImageSource> src;
+					if (!path.empty())
+					{
+						if (const auto pic = uwp_frontend::load_picture(path, 1920, 1080))
+							src = make_bitmap(*pic);
+					}
+					if (bg_picture)
+						bg_picture->put_Source(src.get());
+					set_visible(bg_picture_el, static_cast<bool>(src));
+					set_visible(bg_dim_el, static_cast<bool>(src));
+				}
+
+				// Pictures found on the drives after the Settings page was built: show them in its list,
+				// unless the player is on that page right now (rebuilding it would move the focus).
+				if (const u64 ps = uwp_frontend::pictures_serial(); ps != pictures_seen && settings_built)
+				{
+					int32_t page = 0;
+					if (pivot)
+						pivot->get_SelectedIndex(&page);
+					if (page != 2 || !menu_visible)
+					{
+						pictures_seen = ps;
+						build_settings(settings_panel, false, &first_setting);
+					}
+				}
+			}
+
 			// ---- Tick ----
 			void tick()
 			{
@@ -1749,6 +1790,8 @@ namespace uwp_xaml
 						settings_built = true;
 						build_settings(settings_panel, false, &first_setting);
 					}
+
+					sync_background();
 
 					const u64 serial = uwp_frontend::model_serial();
 					if (serial != seen_serial || seen_serial == 0)

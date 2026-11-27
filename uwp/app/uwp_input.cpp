@@ -19,6 +19,7 @@
 #include <winstring.h>
 
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <mutex>
 #include <sstream>
@@ -244,6 +245,8 @@ namespace
 			return slots[index];
 		}
 	};
+
+	std::atomic<unsigned> g_turbo_mask{0};
 
 	gamepads& get_gamepads()
 	{
@@ -501,8 +504,43 @@ DWORD WINAPI uwp_xinput_get_state(DWORD user_index, XINPUT_STATE* state)
 	g.sThumbLY = to_thumb(r.left_y);
 	g.sThumbRX = to_thumb(r.right_x);
 	g.sThumbRY = to_thumb(r.right_y);
+
+	// Turbo: held turbo buttons go on and off, ~33 ms each (2 frames at 60 fps).
+	if (const unsigned turbo = g_turbo_mask.load(std::memory_order_relaxed))
+	{
+		static std::array<UINT64, XUSER_MAX_COUNT> s_turbo_phase{};
+		const bool off = ((GetTickCount64() / 33) & 1) != 0;
+		if (off)
+		{
+			const auto drop = [&](unsigned bit, WORD button) { if (turbo & bit) g.wButtons &= ~button; };
+			drop(uwp_turbo_cross, XINPUT_GAMEPAD_A);
+			drop(uwp_turbo_circle, XINPUT_GAMEPAD_B);
+			drop(uwp_turbo_square, XINPUT_GAMEPAD_X);
+			drop(uwp_turbo_triangle, XINPUT_GAMEPAD_Y);
+			drop(uwp_turbo_l1, XINPUT_GAMEPAD_LEFT_SHOULDER);
+			drop(uwp_turbo_r1, XINPUT_GAMEPAD_RIGHT_SHOULDER);
+			if (turbo & uwp_turbo_l2)
+				g.bLeftTrigger = 0;
+			if (turbo & uwp_turbo_r2)
+				g.bRightTrigger = 0;
+		}
+		// A new packet number each time the picture of held buttons flips, so the change is seen.
+		const UINT64 phase = GetTickCount64() / 33;
+		if (phase != s_turbo_phase[user_index])
+		{
+			s_turbo_phase[user_index] = phase;
+			pads.packet[user_index]++;
+		}
+	}
+
 	state->dwPacketNumber = pads.packet[user_index];
 	return ERROR_SUCCESS;
+}
+
+void uwp_input_set_turbo(unsigned mask)
+{
+	g_turbo_mask = mask;
+	uwp_input_log.notice("Turbo buttons: 0x%02x", mask);
 }
 
 DWORD WINAPI uwp_xinput_set_state(DWORD user_index, XINPUT_VIBRATION* vibration)

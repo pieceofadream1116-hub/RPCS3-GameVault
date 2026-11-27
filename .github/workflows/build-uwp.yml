@@ -2,6 +2,16 @@ name: Build Xbox UWP
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'uwp/**'
+      - 'rpcs3/**'
+      - 'Utilities/**'
+      - '.github/workflows/build-uwp.yml'
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -96,15 +106,7 @@ jobs:
             -DUSE_NATIVE_INSTRUCTIONS=OFF -DUSE_PRECOMPILED_HEADERS=OFF \
             -DUSE_SDL=OFF -DUSE_FAUDIO=OFF -DUSE_SYSTEM_ZLIB=OFF -DUSE_SYSTEM_CURL=OFF -DUSE_SYSTEM_SDL=OFF \
             -DUSE_DISCORD_RPC=OFF -DUSE_GAMEMODE=OFF -DUSE_LIBEVDEV=OFF
-          ninja -C build-uwp rpcs3_uwp rpcs3_uwp_importcheck
-
-      - name: Build Mesa Dozen
-        run: |
-          # RPCS3's build already made uwp-implibs; Mesa now finds it
-          ls -l /home/claude/uwp-port/build/uwp-implibs
-          curl -L -o mesa.tar.xz https://archive.mesa3d.org/mesa-26.2.5.tar.xz
-          tar xf mesa.tar.xz
-          uwp/toolchain/build-mesa-dzn.sh mesa-26.2.5 build-dzn
+          ninja -C build-uwp rpcs3_uwp
 
       - name: Get DXC (dxil.dll, dxcompiler.dll)
         run: |
@@ -133,6 +135,12 @@ jobs:
           
           uwp/package/package.sh build-uwp RPCS3Xbox.appx cert.pfx build123
 
+      - name: Get WinUI 2 (Microsoft.UI.Xaml.2.8 dependency)
+        run: |
+          curl -L -o winui.zip https://www.nuget.org/api/v2/package/Microsoft.UI.Xaml/2.8.7
+          mkdir winui && cd winui && 7z x ../winui.zip > /dev/null
+          cp "$(find $PWD -path '*AppX/x64/Release*' -name 'Microsoft.UI.Xaml.2.8.appx' | head -n 1)" ../Microsoft.UI.Xaml.2.8.appx
+
       - name: Upload app
         uses: actions/upload-artifact@v4
         with:
@@ -140,3 +148,16 @@ jobs:
           path: |
             RPCS3Xbox.appx
             RPCS3Xbox.cer
+            Microsoft.UI.Xaml.2.8.appx
+
+      - name: Replace the latest release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="PS3 for Xbox (RPCS3), latest build ${GITHUB_SHA::7}.
+          On the Xbox Device Portal, add RPCS3Xbox.appx. The first time, also add Microsoft.UI.Xaml.2.8.appx as its dependency.
+          After installing, set the app type to Game."
+          gh release delete latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create latest RPCS3Xbox.appx Microsoft.UI.Xaml.2.8.appx --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "PS3 (latest build)" --notes "$notes"

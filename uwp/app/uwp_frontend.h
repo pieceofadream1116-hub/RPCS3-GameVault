@@ -135,6 +135,15 @@ namespace uwp_frontend
 
 	// True once init() has run on the emulator thread (the settings need the emulator's configuration).
 	bool model_ready();
+
+	// The player's own background picture (Settings > Background picture): a path, empty for the moving blue one.
+	std::string background_picture();
+	// Changes when the background picture setting changed.
+	u64 background_serial();
+	// Changes when the list of pictures found on the drives changed (the Settings page shows it).
+	u64 pictures_serial();
+	// Reads and decodes a .jpg/.png/.bmp, made smaller to cover max_w x max_h. Null if it can't be read.
+	std::shared_ptr<const icon_data> load_picture(const std::string& path, u32 max_w, u32 max_h);
 	// Changes whenever the lists, status or scan state changed (job progress is polled with get_job()).
 	u64 model_serial();
 	void get_snapshot(snapshot& out);

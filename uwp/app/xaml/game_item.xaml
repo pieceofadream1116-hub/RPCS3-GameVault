@@ -3,18 +3,18 @@
               HorizontalContentAlignment="Stretch" Padding="8,6,8,6">
   <Grid>
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="91"/>
+      <ColumnDefinition Width="120"/>
       <ColumnDefinition Width="*"/>
     </Grid.ColumnDefinitions>
-    <Border Width="91" Height="50" Background="#FF1C1C1C" CornerRadius="4">
+    <Border Width="120" Height="66" Background="#FF0A1A36" CornerRadius="4">
       <Grid>
         <Image x:Name="Icon" Stretch="Uniform"/>
-        <TextBlock x:Name="Placeholder" FontSize="18" Opacity="0.5" HorizontalAlignment="Center" VerticalAlignment="Center">$PLACEHOLDER$</TextBlock>
+        <TextBlock x:Name="Placeholder" FontSize="24" Opacity="0.5" HorizontalAlignment="Center" VerticalAlignment="Center">$PLACEHOLDER$</TextBlock>
       </Grid>
     </Border>
     <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-      <TextBlock FontSize="17" TextTrimming="CharacterEllipsis" MaxLines="1">$TITLE$</TextBlock>
-      <TextBlock FontSize="12" Opacity="0.65" TextTrimming="CharacterEllipsis" MaxLines="1">$SUBTITLE$</TextBlock>
+      <TextBlock FontSize="23" TextTrimming="CharacterEllipsis" MaxLines="1">$TITLE$</TextBlock>
+      <TextBlock FontSize="16" Opacity="0.65" TextTrimming="CharacterEllipsis" MaxLines="1">$SUBTITLE$</TextBlock>
     </StackPanel>
   </Grid>
 </ListViewItem>

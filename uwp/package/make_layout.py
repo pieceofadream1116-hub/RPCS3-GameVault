@@ -17,7 +17,7 @@ struct.pack_into('<H', data, dllchar, struct.unpack_from('<H', data, dllchar)[0]
 open(os.path.join(out, 'rpcs3_uwp.exe'), 'wb').write(data)
 
 shutil.copy(os.path.join(here, 'AppxManifest.xml'), out)
-shutil.copy(os.path.join(os.path.dirname(exe), 'rpcs3_uwp_importcheck.exe'), out)
+# The import-check helper is not packaged: it made the Xbox ask which app to start.
 # Graphics driver (Mesa Dozen: Vulkan on D3D12) and Microsoft's DXIL signer, if given.
 for extra in os.environ.get('UWP_EXTRA_FILES', '').split(os.pathsep):
     if extra:

@@ -24,3 +24,17 @@ void uwp_input_default_config();
 // buttons cross circle square triangle start select up down left right l1 r1 l3 r3. Seconds count
 // from when the game starts running. Controller 1 counts as connected while a script is loaded.
 void uwp_input_load_script(const std::string& path);
+
+// Turbo: while a button in the mask is held it is pressed for ~2 frames and let go for ~2 frames.
+enum uwp_turbo_button : unsigned
+{
+	uwp_turbo_cross = 0x1,
+	uwp_turbo_circle = 0x2,
+	uwp_turbo_square = 0x4,
+	uwp_turbo_triangle = 0x8,
+	uwp_turbo_l1 = 0x10,
+	uwp_turbo_r1 = 0x20,
+	uwp_turbo_l2 = 0x40,
+	uwp_turbo_r2 = 0x80,
+};
+void uwp_input_set_turbo(unsigned mask);

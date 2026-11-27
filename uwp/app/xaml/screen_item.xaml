@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="16,10,16,10" Margin="0,0,0,4">
   <StackPanel>
-    <TextBlock FontSize="17">$LABEL$</TextBlock>
-    <TextBlock FontSize="12" Opacity="0.6" TextWrapping="Wrap">$DETAIL$</TextBlock>
+    <TextBlock FontSize="23">$LABEL$</TextBlock>
+    <TextBlock FontSize="16" Opacity="0.6" TextWrapping="Wrap">$DETAIL$</TextBlock>
   </StackPanel>
 </Button>
