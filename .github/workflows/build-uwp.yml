@@ -155,7 +155,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          notes="PS3 for Xbox (RPCS3), latest build ${GITHUB_SHA::7}.
+          notes="A note from Frank: Thanks for trying the PS3 app for Xbox! Please be patient with us. We're close. Some games already run, and others are still being worked on. New builds show up on this page as soon as they're ready.
+
+          PS3 for Xbox (RPCS3), latest build ${GITHUB_SHA::7}.
           On the Xbox Device Portal, add RPCS3Xbox.appx. The first time, also add Microsoft.UI.Xaml.2.8.appx as its dependency.
           After installing, set the app type to Game."
           gh release delete latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
