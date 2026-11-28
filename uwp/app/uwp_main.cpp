@@ -49,6 +49,8 @@
 #include "uwp_input.h"
 #include "Input/pad_thread.h"
 #include "Utilities/File.h"
+#include "Crypto/unpkg.h"
+#include <deque>
 #include "Utilities/Thread.h"
 #include "util/logs.hpp"
 #include "util/sysinfo.hpp"
@@ -777,7 +779,45 @@ namespace
 		g_emu_callbacks.get_image_info = [](const std::string&, std::string&, s32&, s32&, s32&) { return false; };
 		g_emu_callbacks.get_scaled_image = [](const std::string&, s32, s32, s32&, s32&, u8*, bool) { return false; };
 		g_emu_callbacks.get_font_dirs = []() { return std::vector<std::string>{get_package_dir() + "fonts/"}; };
-		g_emu_callbacks.on_install_pkgs = [](const std::vector<std::string>&, bool) { return false; };
+		// Update packages that come on the disc (PS3_GAME/PKGDIR, INSDIR, PS3_EXTRA), like God of War III v02.00.
+		// They're installed into dev_hdd0 before the game starts. If one can't be installed, the game still
+		// starts from the disc (it just runs without that update) instead of refusing to boot.
+		g_emu_callbacks.on_install_pkgs = [](const std::vector<std::string>& pkgs, bool)
+		{
+			for (const std::string& path : pkgs)
+			{
+				std::deque<package_reader> readers;
+				readers.emplace_back(path);
+				if (!readers[0].is_valid())
+				{
+					sys_log.error("UWP: disc package %s is not valid; starting without it", path);
+					continue;
+				}
+
+				fs::stat_t pkg{};
+				fs::device_stat hdd{};
+				if (fs::get_stat(path, pkg) && fs::statfs(rpcs3::utils::get_hdd0_dir(), hdd) && hdd.avail_free < pkg.size + (64u << 20))
+				{
+					sys_log.error("UWP: not enough space for disc package %s (%u MB needed, %u MB free); starting without it",
+						path, (pkg.size >> 20) + 64, hdd.avail_free >> 20);
+					continue;
+				}
+
+				package_install_result result{};
+				std::deque<std::string> bootables;
+				named_thread worker("PKG Installer", [&]()
+				{
+					result = package_reader::extract_data(readers, bootables, false);
+				});
+				worker();
+
+				if (result.error == package_install_result::error_type::no_error)
+					sys_log.success("UWP: installed disc package %s", path);
+				else
+					sys_log.warning("UWP: disc package %s was not installed (error %d); starting without it", path, static_cast<int>(result.error));
+			}
+			return true;
+		};
 		g_emu_callbacks.add_breakpoint = [](u32) {};
 		g_emu_callbacks.display_sleep_control_supported = []() { return false; };
 		g_emu_callbacks.enable_display_sleep = [](bool) {};

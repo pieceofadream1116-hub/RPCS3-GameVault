@@ -916,6 +916,9 @@ namespace uwp_frontend
 		}
 
 		// Publishes a scan result: sorted games (XMB on top), then loose and bundled programs.
+		void start_firmware_install(const std::string& path);
+		bool g_auto_fw_tried = false;
+
 		void publish_scan(std::vector<game_entry> games, const std::vector<game_entry>& programs, std::vector<install_entry> installs, bool final_pass)
 		{
 			std::sort(games.begin(), games.end(), [](const game_entry& a, const game_entry& b) { return a.title < b.title; });
@@ -932,6 +935,21 @@ namespace uwp_frontend
 			const std::string fw = utils::get_firmware_version();
 			ui_log.notice("UI: %u games/programs, %u installable files, installed firmware '%s'%s", games.size(), installs.size(), fw, final_pass ? "" : " (USB drives not scanned yet)");
 
+			// No firmware yet and a PS3UPDAT.PUP on a drive: install it by itself, once, so the player
+			// doesn't have to find the Install tab first.
+			std::string auto_fw;
+			if (final_pass && fw.empty() && !g_auto_fw_tried)
+			{
+				for (const install_entry& i : installs)
+				{
+					if (i.type == install_entry::kind::firmware)
+					{
+						auto_fw = i.path;
+						break;
+					}
+				}
+			}
+
 			std::lock_guard lock(g_data_mutex);
 			g_games = std::move(games);
 			g_installs = std::move(installs);
@@ -940,6 +958,12 @@ namespace uwp_frontend
 			{
 				g_scanning = false;
 				g_scanning_usb = false;
+			}
+			if (!auto_fw.empty())
+			{
+				g_auto_fw_tried = true;
+				ui_log.notice("UI: no firmware installed; installing %s by itself", auto_fw);
+				g_pending_ui.push_back([auto_fw]() { start_firmware_install(auto_fw); });
 			}
 			g_data_serial++;
 		}
