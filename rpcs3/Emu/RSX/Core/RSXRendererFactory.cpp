@@ -13,6 +13,10 @@
 #include "Emu/RSX/VK/VKGSRender.h"
 #endif
 
+#if defined(RPCS3_UWP)
+#include "Emu/RSX/D3D12/D3D12GSRender.h"
+#endif
+
 namespace rsx
 {
 	void create_render_thread(utils::serial* ar)
@@ -24,6 +28,12 @@ namespace rsx
 	{
 		switch (renderer)
 		{
+		case video_renderer::d3d12:
+#if defined(RPCS3_UWP)
+			return video_renderer::d3d12;
+#else
+			[[fallthrough]];
+#endif
 		case video_renderer::opengl:
 #if !defined(__APPLE__) && !defined(RPCS3_UWP) // the Xbox build has no OpenGL
 			return video_renderer::opengl;
@@ -53,6 +63,10 @@ namespace rsx
 #if defined(HAVE_VULKAN)
 		case video_renderer::vulkan:
 			return std::make_unique<VKGSRender>(ctx, display);
+#endif
+#if defined(RPCS3_UWP)
+		case video_renderer::d3d12:
+			return std::make_unique<D3D12GSRender>(ctx, display);
 #endif
 		default:
 			return std::make_unique<NullGSRender>(ctx, display);

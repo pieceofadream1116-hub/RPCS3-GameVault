@@ -600,6 +600,12 @@ target_sources(rpcs3_emu PRIVATE
     RSX/Utils/rsx_utils.cpp
 )
 
+if(RPCS3_UWP)
+    # Direct DirectX 12 renderer for the Xbox (in progress; see RSX/D3D12/README.md)
+    target_sources(rpcs3_emu PRIVATE RSX/D3D12/D3D12GSRender.cpp)
+    target_link_libraries(rpcs3_emu PRIVATE d3d12 dxgi)
+endif()
+
 if(NOT ANDROID AND NOT APPLE AND NOT RPCS3_UWP)
     target_sources(rpcs3_emu PRIVATE
         RSX/GL/GLCommonDecompiler.cpp

@@ -1012,7 +1012,7 @@ namespace
 			g_main_thread_id = GetCurrentThreadId();
 			create_callbacks();
 
-			Emu.SetSupportedRenderers({video_renderer::null, video_renderer::vulkan});
+			Emu.SetSupportedRenderers({video_renderer::null, video_renderer::vulkan, video_renderer::d3d12});
 			Emu.SetHasGui(false);
 			Emu.SetHeadless(false); // headless mode would force the null renderer
 			Emu.SetUsr("00000001");
@@ -1021,8 +1021,12 @@ namespace
 			// Always Vulkan through Mesa's Dozen (D3D12). Emu.Init's default renderer is Null, so a fresh
 			// config.yml says Null; it must not be taken as a choice. An empty LocalState/null_renderer
 			// file forces the null renderer for CPU-only tests.
+			// The DirectX 12 test renderer (Settings > Video > Graphics engine) is kept when it was chosen.
 			const bool use_null = fs::is_file(g_local_dir + "null_renderer");
-			g_cfg.video.renderer.set(use_null ? video_renderer::null : video_renderer::vulkan);
+			if (use_null)
+				g_cfg.video.renderer.set(video_renderer::null);
+			else if (g_cfg.video.renderer.get() != video_renderer::d3d12)
+				g_cfg.video.renderer.set(video_renderer::vulkan);
 			sys_log.always()("UWP: renderer: %s", g_cfg.video.renderer.get());
 			// XAudio2 sound; an empty LocalState/null_audio file turns it off.
 			const bool null_audio = fs::is_file(g_local_dir + "null_audio");

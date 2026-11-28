@@ -46,6 +46,7 @@ enum class video_renderer
 	null,
 	opengl,
 	vulkan,
+	d3d12, // Xbox build only: direct DirectX 12 (in progress)
 };
 
 enum class audio_renderer

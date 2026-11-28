@@ -93,6 +93,9 @@ namespace rpcs3
 					case video_renderer::vulkan:
 						title_string += title_data.vulkan_adapter;
 						break;
+					case video_renderer::d3d12:
+						title_string += "DirectX 12";
+						break;
 					}
 					break;
 				}
