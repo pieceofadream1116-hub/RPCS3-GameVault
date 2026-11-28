@@ -12,12 +12,15 @@ LOG_CHANNEL(d3d12_log, "D3D12");
 
 // The XAML shell shows whatever BGRA frame it is handed (uwp_main.cpp), like the Vulkan renderer's UWP swap chain.
 extern void uwp_present_frame(const void* bgra_pixels, u32 width, u32 height);
+// The shell takes frames of exactly this size (1920x1080) and drops any other.
+extern void uwp_get_display_size(u32& width, u32& height);
 
 namespace
 {
-	constexpr u32 c_width = 1280;
-	constexpr u32 c_height = 720;
-	constexpr u32 c_row_pitch = c_width * 4; // 5120, a multiple of D3D12_TEXTURE_DATA_PITCH_ALIGNMENT (256)
+	// Set from the shell's display size in init(); 1920 * 4 = 7680 is a multiple of D3D12_TEXTURE_DATA_PITCH_ALIGNMENT (256).
+	u32 c_width = 1920;
+	u32 c_height = 1080;
+	u32 c_row_pitch = 1920 * 4;
 
 	template <typename T>
 	void release(T*& p)
@@ -50,6 +53,8 @@ struct D3D12GSRender::impl
 
 	bool init()
 	{
+		uwp_get_display_size(c_width, c_height);
+		c_row_pitch = (c_width * 4 + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
 		HRESULT hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device));
 		d3d12_log.always()("D3D12CreateDevice (feature level 11_0): 0x%08x", static_cast<u32>(hr));
 		if (FAILED(hr))
@@ -121,7 +126,7 @@ struct D3D12GSRender::impl
 			return false;
 		}
 
-		pixels.resize(usz{c_row_pitch} * c_height);
+		pixels.resize(usz{c_width} * c_height * 4);
 		d3d12_log.always()("D3D12: ready (test picture: pulsing blue screen, %ux%u)", c_width, c_height);
 		return true;
 	}
@@ -162,8 +167,8 @@ struct D3D12GSRender::impl
 		list->ClearRenderTargetView(rtv, colour, 0, nullptr);
 
 		// A white bar sweeping across the middle: the command list really draws per frame.
-		const LONG bar_x = static_cast<LONG>((frames * 8) % c_width);
-		const D3D12_RECT bar{bar_x, c_height / 2 - 20, std::min<LONG>(bar_x + 160, c_width), c_height / 2 + 20};
+		const LONG bar_x = static_cast<LONG>((frames * 12) % c_width);
+		const D3D12_RECT bar{bar_x, static_cast<LONG>(c_height / 2 - 30), std::min<LONG>(bar_x + 240, static_cast<LONG>(c_width)), static_cast<LONG>(c_height / 2 + 30)};
 		const f32 white[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 		list->ClearRenderTargetView(rtv, white, 1, &bar);
 
@@ -193,10 +198,11 @@ struct D3D12GSRender::impl
 		wait_idle();
 
 		void* mapped = nullptr;
-		const D3D12_RANGE read{0, pixels.size()};
+		const D3D12_RANGE read{0, usz{c_row_pitch} * c_height};
 		if (SUCCEEDED(hr = readback->Map(0, &read, &mapped)))
 		{
-			std::memcpy(pixels.data(), mapped, pixels.size());
+			for (u32 y = 0; y < c_height; y++)
+				std::memcpy(pixels.data() + usz{y} * c_width * 4, static_cast<const u8*>(mapped) + usz{y} * c_row_pitch, usz{c_width} * 4);
 			const D3D12_RANGE none{0, 0};
 			readback->Unmap(0, &none);
 			uwp_present_frame(pixels.data(), c_width, c_height);

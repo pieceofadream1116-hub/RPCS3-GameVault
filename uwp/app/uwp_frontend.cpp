@@ -3194,6 +3194,7 @@ namespace uwp_frontend
 				"Vulkan is the normal one. DirectX 12 is the new engine being built for the Xbox: for now it only shows a pulsing blue test screen with a white bar. Applies when the app restarts.",
 				{}, {"Vulkan (normal)", "DirectX 12 (test screen only)"});
 			out.back().on_restart = true;
+			out.back().both = true; // also on the Settings page, not only in the pause menu
 			add("Video", "Resolution scale", &g_cfg.video.resolution_scale_percent, {"50", "75", "100", "125", "150", "200", "250", "300"}, "Internal rendering resolution in percent of 720p. Applies when the game restarts (Restart game).", "%");
 			out.back().on_restart = true;
 			add("Video", "Resolution scale threshold", &g_cfg.video.min_scalable_dimension, {"1", "16", "32", "64", "128", "256", "512"}, "Smaller render targets are not scaled. Applies when the game restarts (Restart game).", " px");
